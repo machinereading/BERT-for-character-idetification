@@ -1,99 +1,103 @@
-# BERT and SpanBERT for Coreference Resolution
-This repository contains code and models for the paper, [BERT for Coreference Resolution: Baselines and Analysis](https://arxiv.org/abs/1908.09091). Additionally, we also include the coreference resolution model from the paper [SpanBERT: Improving Pre-training by Representing and Predicting Spans](https://arxiv.org/abs/1907.10529), which is the current state of the art on OntoNotes (79.6 F1). Please refer to the [SpanBERT repository](https://github.com/facebookresearch/SpanBERT) for other tasks.
+# BERT for Character Identification
 
-The model architecture itself is an extension of the [e2e-coref](https://github.com/kentonl/e2e-coref) model.
+[BERT for Coreference Resolution: Baselines and Analysis](https://arxiv.org/abs/1908.09091) 를 기반으로 한 인물 식별 모델입니다.
+
+## Task Definition
+
+
+
+## Datasets
+
+
+
+### Format
+
+All datasets follow the CoNLL 2012 Shared Task data format. Documents are delimited by the comments in the following format:
+
+```
+#begin document (<Document ID>)[; part ###]
+...
+#end document
+```
+
+Each sentence is delimited by a new line ("\n") and each column indicates the following:
+
+1. Document ID: `/-` (e.g., `/friends-s01e01`).
+2. Scene ID: the ID of the scene within the episode.
+3. Token ID: the ID of the token within the sentence.
+4. Word form: the tokenized word.
+5. Part-of-speech tag: the part-of-speech tag of the word (auto generated).
+6. Constituency tag: the Penn Treebank style constituency tag (auto generated).
+7. Lemma: the lemma of the word (auto generated).
+8. Frameset ID: not provided (always `_`).
+9. Word sense: not provided (always `_`).
+10. Speaker: the speaker of this sentence.
+11. Named entity tag: the named entity tag of the word (auto generated).
+12. Start time: start time of the sentence on video. (millisecond)
+13. End time: start time of the sentence on video. (millisecond)
+14. Video file: Pre-processed sequence of image file from the video corresponding to the sentence. This column represents the file name of the pickle object (Pickle object will be released on 08/01)
+15. Entity ID: the entity ID of the mention, that is consistent across all documents.
+
+Here is a sample from the training dataset:
+
+```
+/friends-s01e01  0  0  He     PRP   (TOP(S(NP*)    he     -  -  Monica_Geller   *  55422 59256 00005.pickle (284)
+/friends-s01e01  0  1  's     VBZ          (VP*    be     -  -  Monica_Geller   *  55422 59256 00005.pickle -
+/friends-s01e01  0  2  just   RB        (ADVP*)    just   -  -  Monica_Geller   *  55422 59256 00005.pickle -
+/friends-s01e01  0  3  some   DT        (NP(NP*    some   -  -  Monica_Geller   *  55422 59256 00005.pickle -
+/friends-s01e01  0  4  guy    NN             *)    guy    -  -  Monica_Geller   *  55422 59256 00005.pickle (284)
+/friends-s01e01  0  5  I      PRP  (SBAR(S(NP*)    I      -  -  Monica_Geller   *  55422 59256 00005.pickle (248)
+/friends-s01e01  0  6  work   VBP          (VP*    work   -  -  Monica_Geller   *  55422 59256 00005.pickle -
+/friends-s01e01  0  7  with   IN     (PP*))))))    with   -  -  Monica_Geller   *  55422 59256 00005.pickle -
+/friends-s01e01  0  8  !      .             *))    !      -  -  Monica_Geller   *  55422 59256 00005.pickle -
+/friends-s01e01  0  0  C'mon  VB   (TOP(S(S(VP*))  c'mon  -  -  Joey_Tribbiani  *  59459 61586 00006.pickle -
+/friends-s01e01  0  1  ,      ,                 *  ,      -  -  Joey_Tribbiani  *  59459 61586 00006.pickle -
+/friends-s01e01  0  2  you    PRP           (NP*)  you    -  -  Joey_Tribbiani  *  59459 61586 00006.pickle (248)
+/friends-s01e01  0  3  're    VBP            (VP*  be     -  -  Joey_Tribbiani  *  59459 61586 00006.pickle -
+/friends-s01e01  0  4  going  VBG            (VP*  go     -  -  Joey_Tribbiani  *  59459 61586 00006.pickle -
+/friends-s01e01  0  5  out    RP           (PRT*)  out    -  -  Joey_Tribbiani  *  59459 61586 00006.pickle -
+/friends-s01e01  0  6  with   IN             (PP*  with   -  -  Joey_Tribbiani  *  59459 61586 00006.pickle -
+/friends-s01e01  0  7  the    DT             (NP*  the    -  -  Joey_Tribbiani  *  59459 61586 00006.pickle -
+/friends-s01e01  0  8  guy    NN            *))))  guy    -  -  Joey_Tribbiani  *  59459 61586 00006.pickle (284)
+/friends-s01e01  0  9  !      .               *))  !      -  -  Joey_Tribbiani  *  59459 61586 00006.pickle -
+```
+
+A mention may include more than one word:
+
+```
+/friends-s01e02  0  0  Ugly         JJ   (TOP(S(NP(ADJP*  ugly         -  -  Chandler_Bing  *  332158 334460 00038.pickle (380
+/friends-s01e02  0  1  Naked        JJ                *)  naked        -  -  Chandler_Bing  *  332158 334460 00038.pickle -
+/friends-s01e02  0  2  Guy          NNP               *)  Guy          -  -  Chandler_Bing  *  332158 334460 00038.pickle 380)
+/friends-s01e02  0  3  got          VBD             (VP*  get          -  -  Chandler_Bing  *  332158 334460 00038.pickle -
+/friends-s01e02  0  4  a            DT              (NP*  a            -  -  Chandler_Bing  *  332158 334460 00038.pickle -
+/friends-s01e02  0  5  Thighmaster  NN               *))  thighmaster  -  -  Chandler_Bing  *  332158 334460 00038.pickle -
+/friends-s01e02  0  6  !            .                *))  !            -  -  Chandler_Bing  *  332158 334460 00038.pickle -
+```
+
+The mapping between the entity ID and the actual character can be found in [`friends_entity_map.txt`](https://github.com/machinereading/okbqa-7-task3/blob/master/data/friends_entity_map.txt). link 수정 TODO
 
 ## Setup
-* Install python3 requirements: `pip install -r requirements.txt`
-* `export data_dir=</path/to/data_dir>`
-* `./setup_all.sh`: This builds the custom kernels
 
-## Pretrained Coreference Models
-Please download following files to use the *pretrained coreference models* on your data. If you want to train your own coreference model, you can skip this step.
-
-| Model          | F1 (%) |
-| -------------- |:------:|
-| BERT-base      | 73.9   |
-| SpanBERT-base  | 77.7   |
-| BERT-large     | 76.9   |
-| SpanBERT-large | 79.6   |
-
-`./download_pretrained.sh <model_name>` (e.g,: bert_base, bert_large, spanbert_base, spanbert_large; assumes that `$data_dir` is set) This downloads BERT/SpanBERT models finetuned on OntoNotes. The original/non-finetuned version of SpanBERT weights is available in this [repository](https://github.com/facebookresearch/SpanBERT). You can use these models with `evaluate.py` and `predict.py` (the section on Batched Prediction Instructions)
+- Install python3 requirements: `pip install -r requirements.txt`
+- `./setup_all.sh`: This builds the custom kernels
 
 
-## Training / Finetuning Instructions
-* Finetuning a BERT/SpanBERT *large* model on OntoNotes requires access to a 32GB GPU. You might be able to train the large model with a smaller `max_seq_length`, `max_training_sentences`, `ffnn_size`, and `model_heads = false` on a 16GB machine; this will almost certainly result in relatively poorer performance as measured on OntoNotes.
-* Running/testing a large pretrained model is still possible on a 16GB GPU. You should be able to finetune the base models on smaller GPUs.
 
-### Setup for training
-This assumes access to OntoNotes 5.0.
-`./setup_training.sh <ontonotes/path/ontonotes-release-5.0> $data_dir`. This preprocesses the OntoNotes corpus, and downloads the original (not finetuned on OntoNotes) BERT models which will be finetuned using `train.py`. 
+## Train
 
-* Experiment configurations are found in `experiments.conf`. Choose an experiment that you would like to run, e.g. `bert_base`
-* Note that configs without the prefix `train_` load checkpoints already tuned on OntoNotes.
-* Training: `GPU=0 python train.py <experiment>`
-* Results are stored in the `log_root` directory (see `experiments.conf`) and can be viewed via TensorBoard.
-* Evaluation: `GPU=0 python evaluate.py <experiment>`. This currently evaluates on the dev set.
+- data 폴더 내에 train, dev, test data set을 각각 `friendstrain.english.v4_gold_conll` `friendstrain.english.v4_gold_conll` `friendstrain.english.v4_gold_conll` 로 저장
+- data 폴더 내에 `friends_entity_map.txt`를 확인.
+- models 폴더 내에 BERT 모델을 다운로드.
+- `./setup_training.sh`: sh파일 내에 vocab_file 경로가 올바른지 확인 한 후 실행.
+-  Experiment configurations을 ` experiments.conf `에 설정.
+-  Training: `GPU=0 python train.py <experiment>` 
 
 
-## Batched Prediction Instructions
 
-* Create a file where each line similar to `cased_config_vocab/trial.jsonlines` (make sure to strip the newlines so each line is well-formed json):
-```
-{
-  "clusters": [], # leave this blank
-  "doc_key": "nw", # key closest to your domain. "nw" is newswire. See the OntoNotes documentation.
-  "sentences": [["[CLS]", "subword1", "##subword1", ".", "[SEP]"]], # list of BERT tokenized segments. Each segment should be less than the max_segment_len in your config
-  "speakers": [["[SPL]", "-", "-", "-", "[SPL]"]], # speaker information for each subword in sentences
-  "sentence_map": [0, 0, 0, 0, 0], # flat list where each element is the sentence index of the subwords
-  "subtoken_map": [0, 0, 0, 1, 2]  # flat list containing original word index for each subword. [CLS]  and the first word share the same index
-}
-```
-  * `clusters` should be left empty and is only used for evaluation purposes.
-  * `doc_key` indicates the genre, which can be one of the following: `"bc", "bn", "mz", "nw", "pt", "tc", "wb"`
-  * `speakers` indicates the speaker of each word. These can be all empty strings if there is only one known speaker.
-* Run `GPU=0 python predict.py <experiment> <input_file> <output_file>`, which outputs the input jsonlines with an additional key `predicted_clusters`.
+## Evaluation
 
-## Notes
-* The current config runs the Independent model.
-* When running on test, change the `eval_path` and `conll_eval_path` from dev to test.
-* The `model_dir` inside the `log_root` contains `stdout.log`. Check the `max_f1` after 57000 steps. For example
-``
-2019-06-12 12:43:11,926 - INFO - __main__ - [57000] evaL_f1=0.7694, max_f1=0.7697
-``
-* You can also load pytorch based model files (ending in `.pt`) which share BERT's architecture. See `pytorch_to_tf.py` for details.
-
-### Important Config Keys
-* `log_root`: This is where all models and logs are stored. Check this before running anything.
-* `bert_learning_rate`: The learning rate for the BERT parameters. Typically, `1e-5` and `2e-5` work well.
-* `task_learning_rate`: The learning rate for the other parameters. Typically, LRs between `0.0001` to `0.0003` work well.
-* `init_checkpoint`: The checkpoint file from which BERT parameters are initialized. Both TF and Pytorch checkpoints work as long as they use the same BERT architecture. Use `*ckpt` files for TF and `*pt` for Pytorch.
-* `max_segment_len`: The maximum size of the BERT context window. Larger segments work better for SpanBERT while BERT suffers a sharp drop at 512.
-
-### Slurm
-If you have access to a slurm GPU cluster, you could use the following for set of commands for training.
-* `python tune.py  --generate_configs --data_dir <coref_data_dir>`: This generates multiple configs for tuning (BERT and task) learning rates, embedding models, and `max_segment_len`. This modifies `experiments.conf`. Use `--trial` to print to stdout instead. If you need to generate this from scratch, refer to `basic.conf`.
-* `grep "\{best\}" experiments.conf | cut -d = -f 1 > torun.txt`: This creates a list of configs that can be used by the script to launch jobs. You can use a regexp to restrict the list of configs. For example, `grep "\{best\}" experiments.conf | grep "sl512*" | cut -d = -f 1 > torun.txt` will select configs with `max_segment_len = 512`.
-* `python tune.py --data_dir <coref_data_dir> --run_jobs`: This launches jobs from torun.txt on the slurm cluster.
-
-
-## Citations
-If you use the pretrained *BERT*-based coreference model (or this implementation), please cite the paper, [BERT for Coreference Resolution: Baselines and Analysis](https://arxiv.org/abs/1908.09091).
-```
-@inproceedings{joshi2019coref,
-    title={{BERT} for Coreference Resolution: Baselines and Analysis},
-    author={Mandar Joshi and Omer Levy and Daniel S. Weld and Luke Zettlemoyer},
-    year={2019},
-    booktitle={Empirical Methods in Natural Language Processing (EMNLP)}
-}
-```
-
-Additionally, if you use the pretrained *SpanBERT* coreference model, please cite the paper, [SpanBERT: Improving Pre-training by Representing and Predicting Spans](https://arxiv.org/abs/1907.10529).
-```
-@article{joshi2019spanbert,
-    title={{SpanBERT}: Improving Pre-training by Representing and Predicting Spans},
-    author={Mandar Joshi and Danqi Chen and Yinhan Liu and Daniel S. Weld and Luke Zettlemoyer and Omer Levy},
-    year={2019},
-    journal={arXiv preprint arXiv:1907.10529}
-}
-```
+- evaluate를 진행할 모델을 복사.
+- ` experiments.conf ` 내에 복사된 이름의 experiment를 설정.
+-  `GPU=0 python evaluate.py <experiment> `.  
+- 생성된 `evaluate_result.txt`로 결과 확인.
+- `python link_character_friendsnew.py`, `python character_evaluate_friendsnew.py` 실행을 통해 인물인식 성능을 확인.

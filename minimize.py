@@ -219,9 +219,10 @@ def minimize_language(language, labels, stats, vocab_file, seg_len, input_dir, o
   # do_lower_case = True if 'chinese' in vocab_file else False
   tokenizer = tokenization.FullTokenizer(
                 vocab_file=vocab_file, do_lower_case=do_lower_case)
-  minimize_partition("dev", language, "v4_gold_conll", labels, stats, tokenizer, seg_len, input_dir, output_dir)
-  minimize_partition("train", language, "v4_gold_conll", labels, stats, tokenizer, seg_len, input_dir, output_dir)
-  minimize_partition("test", language, "v4_gold_conll", labels, stats, tokenizer, seg_len, input_dir, output_dir)
+  minimize_partition("friendsdev", language, "v4_gold_conll", labels, stats, tokenizer, seg_len, input_dir, output_dir)
+  minimize_partition("friendstrain", language, "v4_gold_conll", labels, stats, tokenizer, seg_len, input_dir, output_dir)
+  minimize_partition("friendstest", language, "v4_gold_conll", labels, stats, tokenizer, seg_len, input_dir, output_dir)
+  #minimize_partition("friendsnew", language, "v4_gold_conll", labels, stats, tokenizer, seg_len, input_dir, output_dir)
 
 if __name__ == "__main__":
   vocab_file = sys.argv[1]

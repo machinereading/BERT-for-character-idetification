@@ -7,6 +7,7 @@ import tempfile
 import subprocess
 import operator
 import collections
+import shutil
 
 BEGIN_DOCUMENT_REGEX = re.compile(r"#begin document \((.*)\); part (\d+)")
 COREF_RESULTS_REGEX = re.compile(r".*Coreference: Recall: \([0-9.]+ / [0-9.]+\) ([0-9.]+)%\tPrecision: \([0-9.]+ / [0-9.]+\) ([0-9.]+)%\tF1: ([0-9.]+)%.*", re.DOTALL)
@@ -48,6 +49,9 @@ def output_conll(input_file, output_file, predictions, subtoken_map):
       output_file.write(line)
       output_file.write("\n")
     else:
+      #if get_doc_key(row[0], row[1]) == doc_key:
+      #print(get_doc_key(row[0], row[1]))
+      #print(doc_key)
       assert get_doc_key(row[0], row[1]) == doc_key
       coref_list = []
       if word_index in end_map:
@@ -94,4 +98,8 @@ def evaluate_conll(gold_path, predictions, subtoken_maps, official_stdout=False)
     with open(gold_path, "r") as gold_file:
       output_conll(gold_file, prediction_file, predictions, subtoken_maps)
     print("Predicted conll file: {}".format(prediction_file.name))
+    shutil.copy2(prediction_file.name, "evaluate_result.txt")
+    print("copy conll file: {}".format("evaluate_result.txt"))
+
+
   return { m: official_conll_eval(gold_file.name, prediction_file.name, m, official_stdout) for m in ("muc", "bcub", "ceafe") }

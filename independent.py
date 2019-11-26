@@ -2,22 +2,24 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import json
+import math
 import os
 import random
-import math
-import json
 import threading
+
 import numpy as np
 import tensorflow as tf
 
-import util
-import coref_ops
 import conll
 import metrics
 import optimization
-from bert import tokenization
+import util
 from bert import modeling
+from bert import tokenization
 from pytorch_to_tf import load_from_pytorch_checkpoint
+
+import pickle
 
 
 class CorefModel(object):
@@ -82,7 +84,7 @@ class CorefModel(object):
       train_examples = [json.loads(jsonline) for jsonline in f.readlines()]
     def _enqueue_loop():
       while True:
-        random.shuffle(train_examples)
+        #random.shuffle(train_examples)
         if self.config['single_example']:
           for example in train_examples:
             tensorized_example = self.tensorize_example(example, is_training=True)
@@ -245,6 +247,25 @@ class CorefModel(object):
     top_antecedent_offsets = util.batch_gather(antecedent_offsets, top_antecedents) # [k, c]
     return top_antecedents, top_antecedents_mask, top_fast_antecedent_scores, top_antecedent_offsets
 
+  def coarse_to_fine_pruning2(self, top_span_emb, c):
+    k = util.shape(top_span_emb, 0)
+    top_span_range = tf.range(k) # [k]
+    antecedent_offsets = tf.expand_dims(top_span_range, 1) - tf.expand_dims(top_span_range, 0) # [k, k]
+    antecedents_mask = antecedent_offsets >= 1 # [k, k]
+    #fast_antecedent_scores = tf.expand_dims(top_span_mention_scores, 1) + tf.expand_dims(top_span_mention_scores, 0) # [k, k]
+    fast_antecedent_scores = tf.log(tf.to_float(antecedents_mask)) # [k, k]   #원래 +=임.
+    fast_antecedent_scores += self.get_fast_antecedent_scores(top_span_emb) # [k, k]
+    if self.config['use_prior']:
+      antecedent_distance_buckets = self.bucket_distance(antecedent_offsets) # [k, c]
+      distance_scores = util.projection(tf.nn.dropout(tf.get_variable("antecedent_distance_emb", [10, self.config["feature_size"]], initializer=tf.truncated_normal_initializer(stddev=0.02)), self.dropout), 1, initializer=tf.truncated_normal_initializer(stddev=0.02)) #[10, 1]
+      antecedent_distance_scores = tf.gather(tf.squeeze(distance_scores, 1), antecedent_distance_buckets) # [k, c]
+      fast_antecedent_scores += antecedent_distance_scores
+
+    _, top_antecedents = tf.nn.top_k(fast_antecedent_scores, c, sorted=False) # [k, c]
+    top_antecedents_mask = util.batch_gather(antecedents_mask, top_antecedents) # [k, c]
+    top_fast_antecedent_scores = util.batch_gather(fast_antecedent_scores, top_antecedents) # [k, c]
+    top_antecedent_offsets = util.batch_gather(antecedent_offsets, top_antecedents) # [k, c]
+    return top_antecedents, top_antecedents_mask, top_fast_antecedent_scores, top_antecedent_offsets
 
   def get_predictions_and_loss(self, input_ids, input_mask, text_len, speaker_ids, genre, is_training, gold_starts, gold_ends, cluster_ids, sentence_map):
     model = modeling.BertModel(
@@ -275,11 +296,25 @@ class CorefModel(object):
     flattened_candidate_mask = tf.reshape(candidate_mask, [-1]) # [num_words * max_span_width]
     candidate_starts = tf.boolean_mask(tf.reshape(candidate_starts, [-1]), flattened_candidate_mask) # [num_candidates]
     candidate_ends = tf.boolean_mask(tf.reshape(candidate_ends, [-1]), flattened_candidate_mask) # [num_candidates]
+
+    combined_candidate_st = candidate_starts * 10000 + candidate_ends
+    combined_gold_st = gold_starts * 10000 + gold_ends
+
+    ###
+    _, non_top_span_list = tf.setdiff1d(combined_candidate_st, combined_gold_st)  # [num_candidate - num_gold_mentions]
+    whole_candidate_indices_list = tf.range(util.shape(candidate_starts, 0))  # [num_candidates]
+    gold_span_indices, _ = tf.setdiff1d(whole_candidate_indices_list, non_top_span_list)  # [num_gold_mentions]
+    ###
+
     candidate_sentence_indices = tf.boolean_mask(tf.reshape(candidate_start_sentence_indices, [-1]), flattened_candidate_mask) # [num_candidates]
 
     candidate_cluster_ids = self.get_candidate_labels(candidate_starts, candidate_ends, gold_starts, gold_ends, cluster_ids) # [num_candidates]
 
     candidate_span_emb = self.get_span_emb(mention_doc, mention_doc, candidate_starts, candidate_ends) # [num_candidates, emb]
+
+    '''
+        #Comment : This part is for calculating mention scores and prnunign metnion
+        #It is not used for this task, because mention boundary are given.
     candidate_mention_scores =  self.get_mention_scores(candidate_span_emb, candidate_starts, candidate_ends)
     candidate_mention_scores = tf.squeeze(candidate_mention_scores, 1) # [k]
 
@@ -295,12 +330,19 @@ class CorefModel(object):
                                                True) # [1, k]
     top_span_indices.set_shape([1, None])
     top_span_indices = tf.squeeze(top_span_indices, 0) # [k]
+    '''
+
+    ######## Only Using Gold Span Indices #####
+    k = tf.to_int32(util.shape(gold_span_indices, 0))
+    top_span_indices = gold_span_indices
+    c = tf.minimum(self.config["max_top_antecedents"], k)
+    #####
 
     top_span_starts = tf.gather(candidate_starts, top_span_indices) # [k]
     top_span_ends = tf.gather(candidate_ends, top_span_indices) # [k]
     top_span_emb = tf.gather(candidate_span_emb, top_span_indices) # [k, emb]
     top_span_cluster_ids = tf.gather(candidate_cluster_ids, top_span_indices) # [k]
-    top_span_mention_scores = tf.gather(candidate_mention_scores, top_span_indices) # [k]
+    #top_span_mention_scores = tf.gather(candidate_mention_scores, top_span_indices) # [k]
     genre_emb = tf.gather(tf.get_variable("genre_embeddings", [len(self.genres), self.config["feature_size"]], initializer=tf.truncated_normal_initializer(stddev=0.02)), genre) # [emb]
     if self.config['use_metadata']:
       speaker_ids = self.flatten_emb_by_sentence(speaker_ids, input_mask)
@@ -309,8 +351,14 @@ class CorefModel(object):
         top_span_speaker_ids = None
 
 
+
     dummy_scores = tf.zeros([k, 1]) # [k, 1]
-    top_antecedents, top_antecedents_mask, top_fast_antecedent_scores, top_antecedent_offsets = self.coarse_to_fine_pruning(top_span_emb, top_span_mention_scores, c)
+    #top_antecedents, top_antecedents_mask, top_fast_antecedent_scores, top_antecedent_offsets = self.coarse_to_fine_pruning(top_span_emb, top_span_mention_scores, c)
+    top_antecedents, top_antecedents_mask, top_fast_antecedent_scores, top_antecedent_offsets = self.coarse_to_fine_pruning2(top_span_emb, c)
+
+
+
+
     num_segs, seg_len = util.shape(input_ids, 0), util.shape(input_ids, 1)
     word_segments = tf.tile(tf.expand_dims(tf.range(0, num_segs), 1), [1, seg_len])
     flat_word_segments = tf.boolean_mask(tf.reshape(word_segments, [-1]), tf.reshape(input_mask, [-1]))
@@ -343,7 +391,9 @@ class CorefModel(object):
     loss = self.softmax_loss(top_antecedent_scores, top_antecedent_labels) # [k]
     loss = tf.reduce_sum(loss) # []
 
+    candidate_mention_scores = tf.ones([k])
     return [candidate_starts, candidate_ends, candidate_mention_scores, top_span_starts, top_span_ends, top_antecedents, top_antecedent_scores], loss
+
 
 
   def get_span_emb(self, head_emb, context_outputs, span_starts, span_ends):
@@ -563,6 +613,13 @@ class CorefModel(object):
     summary_dict = {}
     if eval_mode:
       conll_results = conll.evaluate_conll(self.config["conll_eval_path"], coref_predictions, self.subtoken_maps, official_stdout )
+      cluster_result = {'prediction': coref_predictions, 'gold': official_stdout}
+
+      with open('evaluate_result.pickle', 'wb') as handle:
+        pickle.dump(cluster_result, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+
       average_f1 = sum(results["f"] for results in conll_results.values()) / len(conll_results)
       summary_dict["Average F1 (conll)"] = average_f1
       print("Average F1 (conll): {:.2f}%".format(average_f1))
