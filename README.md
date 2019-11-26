@@ -4,11 +4,11 @@
 
 ## Task Definition
 
-
+-
 
 ## Datasets
 
-
+-
 
 ### Format
 
@@ -74,7 +74,7 @@ A mention may include more than one word:
 /friends-s01e02  0  6  !            .                *))  !            -  -  Chandler_Bing  *  332158 334460 00038.pickle -
 ```
 
-The mapping between the entity ID and the actual character can be found in [`friends_entity_map.txt`](https://github.com/machinereading/okbqa-7-task3/blob/master/data/friends_entity_map.txt). link 수정 TODO
+The mapping between the entity ID and the actual character can be found in [`friends_entity_map.txt`]( https://github.com/machinereading/BERT-for-character-idetification/blob/master/data/friendsnew_entity_map.txt )
 
 ## Setup
 
